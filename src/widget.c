@@ -1,33 +1,38 @@
 #include "widget.h"
-#include <stdlib.h>
 
 struct WGT_Widget {
-    WGT_VTable vtable;
+    const WGT_VTable *vtable;
     SDL_Rect rect;
+    const char **label;
 };
 
-WGT_Widget* WGT_MakeWidget(WGT_VTable vtable, void **ctx, size_t size) {
-    WGT_Widget *widget = malloc(sizeof(WGT_Widget) + size);
-    widget->vtable = vtable;
-    widget->rect = (SDL_Rect){0};
-    *ctx = widget + 1;
-    return widget;
+void* WGT_MakeWidget(WGT_Widget **widget, const WGT_VTable *vtable, size_t size) {
+    *widget = malloc(sizeof(WGT_Widget) + size);
+    (*widget)->vtable = vtable;
+    (*widget)->rect = (SDL_Rect){0};
+    void* ctx = widget + 1;
+    return ctx;
 }
 
 void* WGT_GetContext(WGT_Widget *widget) {
     return (widget + 1);
 }
 
-void WGT_PassEvent(WGT_Widget *widget, SDL_Event event) {
-    if (widget->vtable.onEvent != NULL) {
-        (widget->vtable.onEvent)(WGT_GetContext(widget), widget->rect, event);
+void WGT_SendEvent(WGT_Widget *widget, SDL_Event event) {
+    if (widget->vtable->onEvent != NULL) {
+        (widget->vtable->onEvent)(WGT_GetContext(widget), widget->rect, event);
     }
 }
 
 void WGT_Draw(SDL_Renderer *renderer, WGT_Widget *widget) {
     SDL_RenderSetClipRect(renderer, &widget->rect);
-    if (widget->vtable.onDraw != NULL) {
-        (widget->vtable.onDraw)(WGT_GetContext(widget), widget->rect, renderer);
+    int errorCode = -1;
+    if (widget->vtable->onDraw != NULL) {
+        errorCode = (widget->vtable->onDraw)(WGT_GetContext(widget), widget->rect, renderer);
+    }
+    if (errorCode != 0) {
+        SDL_SetRenderDrawColor(renderer, 255, 0, 100, 0);
+        SDL_RenderClear(renderer);
     }
     SDL_RenderSetClipRect(renderer, NULL);
 }
@@ -38,19 +43,25 @@ void WGT_SetSize(WGT_Widget *widget, SDL_Point newSize) {
     }
     widget->rect.w = newSize.x;
     widget->rect.h = newSize.y;
-    if (widget->vtable.onResize != NULL) {
-        (widget->vtable.onResize)(WGT_GetContext(widget), widget->rect);
+    if (widget->vtable->onResize != NULL) {
+        (widget->vtable->onResize)(WGT_GetContext(widget), widget->rect);
     }
 }
 
 void WGT_SetPosition(WGT_Widget *widget, SDL_Point newPosition) {
+    if (widget->rect.x == newPosition.x && widget->rect.x == newPosition.y) {
+        return;
+    }
     widget->rect.x = newPosition.x;
     widget->rect.y = newPosition.y;
+    if (widget->vtable->onMove != NULL) {
+        (widget->vtable->onMove)(WGT_GetContext(widget), widget->rect);
+    }
 }
 
 void WGT_Destroy(WGT_Widget *widget) {
-    if (widget->vtable.onDestroy != NULL) {
-        (widget->vtable.onDestroy)(WGT_GetContext(widget));
+    if (widget->vtable->onDestroy != NULL) {
+        (widget->vtable->onDestroy)(WGT_GetContext(widget));
     }
     free(widget);
 }
